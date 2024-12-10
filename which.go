@@ -5,6 +5,7 @@ import (
 	"os/exec"
 	"path/filepath"
 	"runtime"
+	"slices"
 	"strings"
 
 	"github.com/jolt9dev/go-env"
@@ -16,28 +17,40 @@ var (
 	whichCache = make(map[string]string)
 )
 
-type WhichOptions struct {
+type WhichParams struct {
 	UseCache     bool
 	PrependPaths []string
 }
 
-func Which(command string) (string, bool) {
-	return WhichFirst(command, nil)
+type WhichOption func(*WhichParams)
+
+func WithUseCache() WhichOption {
+	return func(p *WhichParams) {
+		p.UseCache = true
+	}
 }
 
-func WhichFirst(command string, options *WhichOptions) (string, bool) {
-	if command == "" {
-		return "", false
+func WithPrependPaths(paths ...string) WhichOption {
+	return func(p *WhichParams) {
+		p.PrependPaths = append(p.PrependPaths, paths...)
+	}
+}
+
+func Which(command string, options ...WhichOption) (string, bool) {
+	params := &WhichParams{}
+
+	for _, option := range options {
+		option(params)
 	}
 
-	if options == nil {
-		options = &WhichOptions{}
+	if command == "" {
+		return "", false
 	}
 
 	base := filepath.Base(command)
 	ext := filepath.Ext(command)
 	name := base[0 : len(base)-len(ext)]
-	if options.UseCache {
+	if params.UseCache {
 		path, ok := whichCache[name]
 		if ok {
 			return path, true
@@ -57,7 +70,7 @@ func WhichFirst(command string, options *WhichOptions) (string, bool) {
 				return "", false
 			}
 
-			if options.UseCache {
+			if params.UseCache {
 				whichCache[name] = path
 			}
 
@@ -66,8 +79,8 @@ func WhichFirst(command string, options *WhichOptions) (string, bool) {
 	}
 
 	pathSegments := []string{}
-	if len(options.PrependPaths) > 0 {
-		pathSegments = append(pathSegments, options.PrependPaths...)
+	if len(params.PrependPaths) > 0 {
+		pathSegments = append(pathSegments, params.PrependPaths...)
 	}
 
 	pathSegments = append(pathSegments, env.SplitPath()...)
@@ -102,33 +115,38 @@ func WhichFirst(command string, options *WhichOptions) (string, bool) {
 				continue
 			}
 
-			hasExt := false
-			for _, n := range extSegments {
-				if strings.EqualFold(n, ext) {
-					hasExt = true
-					break
-				}
-			}
+			hasExt := len(ext) > 0
 
 			for _, entry := range entries {
 				if entry.IsDir() {
 					continue
 				}
 
-				if hasExt {
-					if strings.EqualFold(entry.Name(), command) {
-						fp := filepath.Join(path, entry.Name())
-						whichCache[name] = fp
-						return fp, true
-					}
+				entryName := entry.Name()
+				entryExt := filepath.Ext(entryName)
+				entryHasExt := len(entryExt) > 0
 
+				// must have an extension on windows to execute
+				if !entryHasExt && !hasExt {
 					continue
 				}
 
-				entryName := entry.Name()
-				entryExt := filepath.Ext(entryName)
-				for _, n := range extSegments {
-					if strings.EqualFold(n, entryExt) {
+				if entryHasExt && hasExt {
+					if strings.EqualFold(entryName, command) {
+						fp := filepath.Join(path, entryName)
+						whichCache[name] = fp
+						return fp, true
+					}
+					continue
+				}
+
+				if entryHasExt {
+					entryExt = strings.ToLower(entryExt)
+				}
+
+				if entryHasExt && !hasExt && slices.Contains(extSegments, entryExt) {
+					try := name + entryExt
+					if strings.EqualFold(try, entryName) {
 						fp := filepath.Join(path, entryName)
 						whichCache[name] = fp
 						return fp, true

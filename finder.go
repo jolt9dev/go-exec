@@ -46,7 +46,7 @@ func (r *ExecutableRegistry) Has(name string) bool {
 	return ok
 }
 
-func (r *ExecutableRegistry) Find(name string, options *WhichOptions) (string, error) {
+func (r *ExecutableRegistry) Find(name string, options ...WhichOption) (string, error) {
 	m, ok := r.data[name]
 	if !ok {
 		sb := xstrings.Underscore(name, xstrings.Screaming)
@@ -55,11 +55,12 @@ func (r *ExecutableRegistry) Find(name string, options *WhichOptions) (string, e
 		r.data[name] = m
 	}
 
-	if options == nil {
-		options = &WhichOptions{}
+	params := &WhichParams{}
+	for _, option := range options {
+		option(params)
 	}
 
-	if options.UseCache && m.Path != "" {
+	if params.UseCache && m.Path != "" {
 		return m.Path, nil
 	}
 
@@ -68,7 +69,7 @@ func (r *ExecutableRegistry) Find(name string, options *WhichOptions) (string, e
 		if value != "" {
 			value, _ = env.Expand(value)
 			if value != "" {
-				next, ok := WhichFirst(value, options)
+				next, ok := Which(value, options...)
 				if ok {
 					m.Path = next
 					return m.Path, nil
@@ -78,7 +79,7 @@ func (r *ExecutableRegistry) Find(name string, options *WhichOptions) (string, e
 	}
 
 	if m.Path != "" {
-		next, ok := WhichFirst(m.Path, options)
+		next, ok := Which(m.Path, options...)
 		if ok {
 			m.Path = next
 			return m.Path, nil
@@ -96,7 +97,7 @@ func (r *ExecutableRegistry) Find(name string, options *WhichOptions) (string, e
 				continue
 			}
 
-			next, ok := WhichFirst(exe2, options)
+			next, ok := Which(exe2, options...)
 			if ok {
 				m.Path = next
 				return m.Path, nil
@@ -117,7 +118,7 @@ func (r *ExecutableRegistry) Find(name string, options *WhichOptions) (string, e
 				continue
 			}
 
-			next, ok := WhichFirst(exe2, options)
+			next, ok := Which(exe2, options...)
 			if ok {
 				m.Path = next
 				return m.Path, nil
@@ -137,7 +138,7 @@ func (r *ExecutableRegistry) Find(name string, options *WhichOptions) (string, e
 			continue
 		}
 
-		next, ok := WhichFirst(exe2, options)
+		next, ok := Which(exe2, options...)
 		if ok {
 			m.Path = next
 			return m.Path, nil
@@ -151,6 +152,6 @@ func Register(name string, exe *Executable) {
 	Registry.Register(name, exe)
 }
 
-func Find(name string, options *WhichOptions) (string, error) {
-	return Registry.Find(name, options)
+func Find(name string, options ...WhichOption) (string, error) {
+	return Registry.Find(name, options...)
 }
