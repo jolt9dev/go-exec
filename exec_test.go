@@ -4,9 +4,17 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/jolt9dev/go-env"
 	exec "github.com/jolt9dev/go-exec"
+	"github.com/jolt9dev/go-platform"
 	"github.com/stretchr/testify/assert"
 )
+
+func init() {
+	if platform.IsWindows() {
+		env.AppendPath("C:\\Program Files\\Git\\usr\\bin")
+	}
+}
 
 func TestNewCommandOutput(t *testing.T) {
 	echo, ok := exec.Which("echo")
