@@ -23,6 +23,7 @@ type Cmd struct {
 	*exec.Cmd
 	logger        func(cmd *Cmd)
 	disableLogger bool
+	deferred      func()
 }
 
 func New(name string, args ...string) *Cmd {
@@ -30,7 +31,12 @@ func New(name string, args ...string) *Cmd {
 	return &Cmd{Cmd: cmd}
 }
 
-func SetLigger(f func(cmd *Cmd)) {
+// Sets the global logger function for all Cmd instances
+// This is useful for logging all commands
+//
+// Parameters:
+//   - f: The logger function
+func SetLogger(f func(cmd *Cmd)) {
 	logger = f
 }
 
@@ -46,8 +52,8 @@ func (c *Cmd) DisableLogger() {
 // with the parsed command and arguments
 // Example:
 //
-//	Command("echo hello world")
-//	Command("echo 'hello world'")
+//	Command("echo hello world").Run()
+//	Command("echo 'hello world'").Output()
 func Command(command string) *Cmd {
 	args := SplitArgs(command)
 	command = args[0]
@@ -55,10 +61,16 @@ func Command(command string) *Cmd {
 	return New(command, args...)
 }
 
+// Run parses the command into arguments, runs the command,
+// waits for it to finish, inherits the standard input/output/error
+// and returns the PsOutput
 func Run(command string) (*PsOutput, error) {
 	return Command(command).Run()
 }
 
+// Run parses the command into arguments, runs the command,
+// waits for it to finish, sets standard output/error to Stdout/Stderr
+// and returns the PsOutput with the captured output
 func Output(command string) (*PsOutput, error) {
 	return Command(command).Output()
 }
@@ -75,6 +87,14 @@ func (c *Cmd) PrependArgs(args ...string) *Cmd {
 
 func (c *Cmd) WithArgs(args ...string) *Cmd {
 	c.Cmd.Args = args
+	return c
+}
+
+// WithDeferred sets a deferred function to be called after
+// the command has finished executing.
+// This is useful for cleaning up resources such as temporary files
+func (c *Cmd) WithDeferred(deferFunc func()) *Cmd {
+	c.deferred = deferFunc
 	return c
 }
 
@@ -157,8 +177,17 @@ func (c *Cmd) WithStdio(stdin, stdout, stderr int) *Cmd {
 	return c
 }
 
+func (c *Cmd) CombineOutput() ([]byte, error) {
+	if c.deferred != nil {
+		defer c.deferred()
+	}
+
+	return c.Cmd.CombinedOutput()
+}
+
 // Runs the command quietly, without any PsOutput
 func (c *Cmd) Quiet() (*PsOutput, error) {
+
 	c.Cmd.Stdout = nil
 	c.Cmd.Stderr = nil
 	var out PsOutput
@@ -281,5 +310,10 @@ func (c *Cmd) Start() error {
 }
 
 func (c *Cmd) Wait() error {
-	return c.Cmd.Wait()
+	if c.deferred != nil {
+		defer c.deferred()
+	}
+
+	err := c.Cmd.Wait()
+	return err
 }
